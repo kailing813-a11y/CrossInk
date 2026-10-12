@@ -1,0 +1,4 @@
+add_executable(ClippingSyncPlanTest ClippingSyncPlanTest.cpp)
+target_link_libraries(ClippingSyncPlanTest PRIVATE crosspoint_test_common GTest::gtest_main)
+target_include_directories(ClippingSyncPlanTest PRIVATE ${REPO_ROOT}/src)
+gtest_discover_tests(ClippingSyncPlanTest)

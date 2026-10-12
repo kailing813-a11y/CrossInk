@@ -15,7 +15,9 @@
 #include <functional>
 
 #include "activities/reader/ReadingStatsUtils.h"
+#include "clippings/ClippingIdentity.h"
 #include "clippings/ClippingPreview.h"
+#include "clippings/ClippingSyncPlan.h"
 
 namespace {
 constexpr uint8_t LEGACY_VERSION = 1;
@@ -24,7 +26,37 @@ constexpr uint8_t LAYOUT_SIGNATURE_VERSION = 3;
 constexpr uint8_t VERSION = 4;
 constexpr size_t INITIAL_CLIPPING_RESERVE = 4;
 constexpr char CLIPPINGS_DIR[] = "/.crosspoint/clippings";
+constexpr char DELETIONS_DIR[] = "/.crosspoint/clippings-deleted";
 constexpr size_t TEXT_COPY_BUFFER_SIZE = 128;
+// "<16 hex id> <8 hex key>\n"
+constexpr size_t DELETION_LINE_SIZE = 16 + 1 + 8 + 1;
+// Bound the file read during sync; far above any realistic backlog.
+constexpr size_t DELETIONS_MAX = 1024;
+
+// /.crosspoint/clippings/epub_123.bin -> /.crosspoint/clippings-deleted/epub_123.txt
+std::string deletionLogPath(const std::string& storePath) {
+  const size_t slash = storePath.find_last_of('/');
+  std::string name = slash == std::string::npos ? storePath : storePath.substr(slash + 1);
+  const size_t dot = name.rfind(".bin");
+  if (dot != std::string::npos) name.resize(dot);
+  return std::string(DELETIONS_DIR) + "/" + name + ".txt";
+}
+
+bool parseHex(const char* text, const size_t digits, uint32_t& out) {
+  out = 0;
+  for (size_t i = 0; i < digits; ++i) {
+    const char c = text[i];
+    uint32_t v;
+    if (c >= '0' && c <= '9')
+      v = static_cast<uint32_t>(c - '0');
+    else if (c >= 'a' && c <= 'f')
+      v = static_cast<uint32_t>(c - 'a' + 10);
+    else
+      return false;
+    out = (out << 4) | v;
+  }
+  return true;
+}
 
 uint32_t creationTimeUtc() {
   const time_t now = time(nullptr);
@@ -132,7 +164,17 @@ bool ClippingStore::loadForBook(const std::string& filePath, const std::string& 
     return true;
   }
 
-  return readFromFile();
+  if (!readFromFile()) return false;
+  // Sync loads a book by path only; keep the saved title and author so a
+  // rewrite does not blank them in the clipped-books list.
+  if (bookTitle.empty() && bookAuthor.empty()) {
+    ClippingFileHeader header;
+    if (readClippingFileHeader(storeFilePath, nullptr, header)) {
+      bookTitle = std::move(header.title);
+      bookAuthor = std::move(header.author);
+    }
+  }
+  return true;
 }
 
 void ClippingStore::unload() {
@@ -151,16 +193,11 @@ ClippingStore::AddResult ClippingStore::addClipping(const uint16_t spineIndex, c
                                                     const uint16_t wordCount, const char* chapterTitle,
                                                     const uint16_t paragraphIndex, const std::string& text,
                                                     const uint16_t tableSelection, const uint32_t layoutSignature) {
-  if (clippings.size() >= CLIPPING_MAX_PER_BOOK) {
-    LOG_ERR("CLIP", "Clipping limit (%u) reached", CLIPPING_MAX_PER_BOOK);
-    return AddResult::LimitReached;
-  }
-
   Clipping clipping;
   clipping.spineIndex = spineIndex;
   clipping.startPage = startPage;
   clipping.endPage = endPage;
-  clipping.pageCount = std::max<uint16_t>(1, pageCount);
+  clipping.pageCount = pageCount;
   clipping.startWordIndex = startWordIndex;
   clipping.endWordIndex = endWordIndex;
   clipping.wordCount = wordCount;
@@ -169,6 +206,24 @@ ClippingStore::AddResult ClippingStore::addClipping(const uint16_t spineIndex, c
   clipping.layoutSignature = layoutSignature;
   clipping.tableSelection = tableSelection;
   copyBounded(clipping.chapterTitle, sizeof(clipping.chapterTitle), chapterTitle);
+  return appendRecord(std::move(clipping), text);
+}
+
+ClippingStore::AddResult ClippingStore::addSyncedClipping(const Clipping& record, const std::string& text) {
+  Clipping clipping = record;
+  clipping.resolvedLayoutBoundaries = 0;
+  clipping.chapterTitle[sizeof(clipping.chapterTitle) - 1] = '\0';
+  clipping.chapterTitle[utf8SafeTruncateBuffer(clipping.chapterTitle,
+                                               static_cast<int>(strlen(clipping.chapterTitle)))] = '\0';
+  return appendRecord(std::move(clipping), text);
+}
+
+ClippingStore::AddResult ClippingStore::appendRecord(Clipping clipping, const std::string& text) {
+  if (clippings.size() >= CLIPPING_MAX_PER_BOOK) {
+    LOG_ERR("CLIP", "Clipping limit (%u) reached", CLIPPING_MAX_PER_BOOK);
+    return AddResult::LimitReached;
+  }
+  clipping.pageCount = std::max<uint16_t>(1, clipping.pageCount);
   const size_t cappedLength = std::min(text.size(), CLIPPING_TEXT_MAX);
   clipping.textLength = static_cast<uint16_t>(utf8SafeTruncateBuffer(text.data(), static_cast<int>(cappedLength)));
 
@@ -183,8 +238,13 @@ ClippingStore::AddResult ClippingStore::addClipping(const uint16_t spineIndex, c
   return AddResult::Added;
 }
 
-bool ClippingStore::removeClippingAt(const size_t index) {
+bool ClippingStore::removeClippingAt(const size_t index, const bool recordDeletion) {
   if (index >= clippings.size()) return false;
+  // Record before the text is gone. A failed log write keeps the local delete:
+  // the clipping can still be deleted elsewhere, and the user asked for it gone.
+  if (recordDeletion && !appendPendingDeletion(clippings[index])) {
+    LOG_ERR("CLIP", "Clipping deletion will not sync: %s", storeFilePath.c_str());
+  }
   Clipping clipping = std::move(clippings[index]);
   clippings.erase(clippings.begin() + index);
   dirty = true;
@@ -194,6 +254,76 @@ bool ClippingStore::removeClippingAt(const size_t index) {
     return false;
   }
   return true;
+}
+
+bool ClippingStore::clippingSyncKeys(const size_t index, char (&id)[17], uint32_t& key) const {
+  const Clipping* clipping = clippingAt(index);
+  std::string text;
+  if (!clipping || !readClippingText(*clipping, text)) return false;
+  key = clippingSyncPlan::textKey(clipping->spineIndex, text.data(), text.size());
+  return clippingIdentity::compute(clippingUnixTimestamp(clipping->timestamp), text, id);
+}
+
+bool ClippingStore::appendPendingDeletion(const Clipping& clipping) const {
+  std::string text;
+  if (!readClippingText(clipping, text)) return false;
+  char id[17];
+  if (!clippingIdentity::compute(clippingUnixTimestamp(clipping.timestamp), text, id)) return false;
+  const uint32_t key = clippingSyncPlan::textKey(clipping.spineIndex, text.data(), text.size());
+  char line[DELETION_LINE_SIZE + 1];
+  snprintf(line, sizeof(line), "%s %08lx\n", id, static_cast<unsigned long>(key));
+  Storage.mkdir("/.crosspoint");
+  Storage.mkdir(DELETIONS_DIR);
+  const std::string path = deletionLogPath(storeFilePath);
+  FsFile f = Storage.open(path.c_str(), O_WRONLY | O_CREAT | O_AT_END);
+  if (!f) {
+    LOG_ERR("CLIP", "Failed to open clipping deletion log: %s", path.c_str());
+    return false;
+  }
+  const bool ok = f.write(reinterpret_cast<const uint8_t*>(line), DELETION_LINE_SIZE) == DELETION_LINE_SIZE;
+  f.close();
+  if (!ok) LOG_ERR("CLIP", "Failed to write clipping deletion log: %s", path.c_str());
+  return ok;
+}
+
+bool ClippingStore::readPendingDeletions(const std::string& filePath, std::vector<PendingDeletion>& out) {
+  out.clear();
+  const std::string path = deletionLogPath(storeFilePathForBook(filePath, "epub"));
+  if (!Storage.exists(path.c_str())) return true;
+  FsFile f;
+  if (!Storage.openFileForRead("CLIP", path, f)) return false;
+  char line[DELETION_LINE_SIZE];
+  // Lines are fixed-width; a torn final line from a power loss is ignored.
+  while (out.size() < DELETIONS_MAX &&
+         f.read(reinterpret_cast<uint8_t*>(line), DELETION_LINE_SIZE) == static_cast<int>(DELETION_LINE_SIZE)) {
+    PendingDeletion entry;
+    uint32_t ignored = 0;
+    if (line[16] != ' ' || line[DELETION_LINE_SIZE - 1] != '\n' || !parseHex(line, 16, ignored) ||
+        !parseHex(line + 17, 8, entry.key)) {
+      LOG_ERR("CLIP", "Skipping malformed clipping deletion entry: %s", path.c_str());
+      continue;
+    }
+    std::memcpy(entry.id, line, 16);
+    entry.id[16] = '\0';
+    out.push_back(entry);
+  }
+  f.close();
+  return true;
+}
+
+bool ClippingStore::clearPendingDeletions(const std::string& filePath) {
+  const std::string path = deletionLogPath(storeFilePathForBook(filePath, "epub"));
+  return !Storage.exists(path.c_str()) || Storage.remove(path.c_str());
+}
+
+void ClippingStore::movePendingDeletions(const std::string& oldStorePath, const std::string& newStorePath) {
+  const std::string from = deletionLogPath(oldStorePath);
+  const std::string to = deletionLogPath(newStorePath);
+  if (from == to || !Storage.exists(from.c_str())) return;
+  if (Storage.exists(to.c_str())) Storage.remove(to.c_str());
+  if (!Storage.rename(from.c_str(), to.c_str())) {
+    LOG_ERR("CLIP", "Failed to move clipping deletion log: %s", from.c_str());
+  }
 }
 
 const Clipping* ClippingStore::clippingAt(const size_t index) const {
@@ -273,7 +403,14 @@ bool ClippingStore::saveToFile() {
   return false;
 }
 
-void ClippingStore::clearAll() {
+void ClippingStore::clearAll(const bool recordDeletions) {
+  if (recordDeletions) {
+    for (const auto& clipping : clippings) {
+      if (!appendPendingDeletion(clipping)) {
+        LOG_ERR("CLIP", "Clipping deletion will not sync: %s", storeFilePath.c_str());
+      }
+    }
+  }
   std::vector<Clipping>().swap(clippings);
   dirty = false;
   if (!storeFilePath.empty() && Storage.exists(storeFilePath.c_str())) {
@@ -566,6 +703,8 @@ void ClippingStore::deleteForFilePath(const std::string& filePath, const std::st
   if (Storage.exists(path.c_str())) {
     Storage.remove(path.c_str());
   }
+  const std::string deletions = deletionLogPath(path);
+  if (Storage.exists(deletions.c_str())) Storage.remove(deletions.c_str());
 }
 
 bool ClippingStore::migrateForFilePath(const std::string& oldFilePath, const std::string& newFilePath,
@@ -619,6 +758,7 @@ bool ClippingStore::migrateForFilePath(const std::string& oldFilePath, const std
   if (hasDestination && Storage.exists(backupPath.c_str())) {
     Storage.remove(backupPath.c_str());
   }
+  movePendingDeletions(oldStorePath, newStorePath);
   return true;
 }
 
@@ -714,6 +854,7 @@ bool ClippingStore::commitRenameMigration(RenameMigration& migration) {
     LOG_ERR("CLIP", "Failed to delete clipping rename backup: %s", migration.destinationBackupPath.c_str());
     ok = false;
   }
+  movePendingDeletions(migration.sourcePath, migration.destinationPath);
   migration.active = false;
   return ok;
 }

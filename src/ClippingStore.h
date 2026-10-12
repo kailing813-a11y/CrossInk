@@ -84,9 +84,26 @@ class ClippingStore {
                         uint16_t startWordIndex, uint16_t endWordIndex, uint16_t wordCount, const char* chapterTitle,
                         uint16_t paragraphIndex, const std::string& text, uint16_t tableSelection,
                         uint32_t layoutSignature);
-  bool removeClippingAt(size_t index);
+  // Store a clipping received from the sync server, keeping its creation time
+  // and position fields. Text and offsets in `record` are replaced from `text`.
+  AddResult addSyncedClipping(const Clipping& record, const std::string& text);
+  // `recordDeletion` marks a user deletion so the next sync removes it from the
+  // server too. Rollbacks and deletions that came from the server pass false.
+  bool removeClippingAt(size_t index, bool recordDeletion = false);
   bool saveToFile();
-  void clearAll();
+  void clearAll(bool recordDeletions = false);
+
+  // Deletions waiting to be sent to the sync server, one per line as
+  // "<16-hex id> <8-hex text key>". Stored outside the clippings directory so
+  // book listings never mistake it for a clipping file.
+  struct PendingDeletion {
+    char id[17] = {};
+    uint32_t key = 0;
+  };
+  static bool readPendingDeletions(const std::string& filePath, std::vector<PendingDeletion>& out);
+  static bool clearPendingDeletions(const std::string& filePath);
+  // Identity and text key of a saved clipping, as used by sync.
+  bool clippingSyncKeys(size_t index, char (&id)[17], uint32_t& key) const;
 
   bool hasClippings() const { return !clippings.empty(); }
   size_t clippingCount() const { return clippings.size(); }
@@ -124,6 +141,9 @@ class ClippingStore {
   std::string storeFilePath;
   bool dirty = false;
 
+  AddResult appendRecord(Clipping clipping, const std::string& text);
+  bool appendPendingDeletion(const Clipping& clipping) const;
+  static void movePendingDeletions(const std::string& oldStorePath, const std::string& newStorePath);
   bool readFromFile();
   bool readFromFile(const std::string& path, std::vector<Clipping>& out, size_t onlyIndex = SIZE_MAX) const;
   bool writeToFile(const std::string* replacementText = nullptr, size_t replacementIndex = SIZE_MAX,

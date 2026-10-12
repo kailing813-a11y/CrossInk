@@ -331,7 +331,7 @@ void SavedItemsHomeActivity::showSavedBookActionMenu(const int bookIndex, const 
             }
             case FileBrowserAction::DeleteClippings:
               CLIPPINGS.loadForBook(entry.bookPath, entry.bookTitle, entry.bookAuthor, entry.bookType);
-              CLIPPINGS.clearAll();
+              CLIPPINGS.clearAll(true);
               break;
             default:
               break;

@@ -169,7 +169,7 @@ ReadingSyncUpload::ExtrasResult ReadingSyncUpload::extras(const std::string& pat
   // These independent snapshots must still be attempted after a stats failure.
   // Clippings are EPUB-only; XTC books never save any.
   if (KOREADER_STORE.getSyncClippings() && FsHelpers::hasEpubExtension(path))
-    result.clippings = ClippingsUpload::upload(path, document);
+    result.clippings = ClippingsUpload::sync(path, document);
   LOG_INF("ReadingSync", "Extras: stats=%d clippings=%d", static_cast<int>(result.stats),
           static_cast<int>(result.clippings));
   return result;

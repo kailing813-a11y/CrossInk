@@ -112,6 +112,28 @@ CrossPoint Sync servers:
 
 Changing the server URL clears what was learned about the old server.
 
+### Clippings
+
+With **Clippings** on, syncing a book keeps its clippings the same on every
+device that uses your account, including KOReader with a highlight-sync plugin:
+
+- Clippings made on another device are downloaded and appear as highlights.
+- A clipping deleted on another device is removed here.
+- Deleting a clipping here (one at a time, or **Delete Clippings** for a whole
+  book) deletes it on the server at the next sync, so it does not come back.
+- Clippings the server does not have yet are uploaded.
+
+Matching uses the clipping's server id and, as a fallback, its text in the same
+chapter, ignoring line breaks, spacing, punctuation and case. A quote saved on
+two devices therefore stays a single clipping. Downloaded clippings keep their
+original creation date and chapter; the reader finds them by their text, so they
+appear even when the other device used a different layout.
+
+Deletions waiting to be sent are kept in
+`/.crosspoint/clippings-deleted/<bookType>_<crc32(path)>.txt` until a sync
+delivers them. A book holds at most 256 clippings; downloads beyond that are
+skipped and logged.
+
 ## Ways to Sync
 
 Every sync action sends the same data: reading progress (EPUB only), plus reading

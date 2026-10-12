@@ -114,6 +114,72 @@ StatsUploadClient::Result StatsUploadClient::put(const char* endpoint, const cha
   return Result::Ok;
 }
 
+StatsUploadClient::Result StatsUploadClient::get(const char* endpoint, char* buffer, const size_t capacity,
+                                                 size_t& length) {
+  length = 0;
+  if (!impl) {
+    LOG_ERR("StatsSync", "Cannot allocate HTTP client");
+    return Result::LowMemory;
+  }
+  if (!buffer || capacity < 2) return Result::InvalidResponse;
+  auto& http = impl->http;
+  // Same TLS headroom policy as put(): keep a live connection while it fits.
+  if (ESP.getFreeHeap() < 35000 || ESP.getMaxAllocHeap() < 20000) http.end();
+  if (ESP.getFreeHeap() < 35000 || ESP.getMaxAllocHeap() < 20000) {
+    LOG_ERR("StatsSync", "Insufficient memory for download");
+    return Result::LowMemory;
+  }
+  http.setInsecure();
+  http.setTimeout(15000);
+  if (!http.begin(KOREADER_STORE.getBaseUrl() + endpoint)) {
+    LOG_ERR("StatsSync", "Invalid server URL");
+    http.end();
+    return Result::Network;
+  }
+  http.addHeader("Accept", "application/json");
+  http.addHeader("x-auth-user", KOREADER_STORE.getUsername());
+  http.addHeader("x-auth-key", KOREADER_STORE.getMd5Password());
+  bool complete = true;
+#ifdef SIMULATOR
+  const int status = http.GET();
+  const auto body = http.getString();
+  complete = body.length() < capacity;
+  if (complete) {
+    memcpy(buffer, body.c_str(), body.length());
+    length = body.length();
+  }
+#else
+  bool overflow = false;
+  const int status = http.GET([&](const uint8_t* data, size_t size) {
+    if (size >= capacity - length) {
+      overflow = true;
+      return false;
+    }
+    memcpy(buffer + length, data, size);
+    length += size;
+    return true;
+  });
+  complete = !overflow && http.responseComplete();
+#endif
+  LOG_DBG("StatsSync", "Download response: HTTP %d (%u bytes)", status, static_cast<unsigned>(length));
+  recordMissingApi(status);
+  auto failure = [&](Result result) {
+    http.end();
+    length = 0;
+    return result;
+  };
+  if (status <= 0) return failure(Result::Network);
+  if (status == 401) return failure(Result::Auth);
+  if (status == 404 || status == 405) return failure(Result::Unsupported);
+  if (status != 200) return failure(Result::Server);
+  if (!complete) {
+    LOG_ERR("StatsSync", "Download reply exceeds %u-byte buffer", static_cast<unsigned>(capacity));
+    return failure(Result::InvalidResponse);
+  }
+  buffer[length] = '\0';
+  return Result::Ok;
+}
+
 StatsUploadClient::Result StatsUploadClient::probe(const bool trustHtml) {
   if (!impl) {
     LOG_ERR("StatsSync", "Cannot allocate HTTP client");

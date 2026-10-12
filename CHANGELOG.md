@@ -2,6 +2,7 @@
 
 ### Added
 
+- Sync clippings both ways with CrossPoint Sync: clippings made on other devices (including KOReader) download as highlights, clippings deleted elsewhere are removed, and deleting a clipping on the reader deletes it on the server at the next sync.
 - Assign Select Chapter to shortcuts, Quick Actions, or touch gestures to open the chapter list directly in EPUB and XTC books.
 - Track active reading seconds by local day, sync daily reading time to CrossPoint Sync, and show today's total and 7-day average on the This Device reading stats page.
 - Preview OPDS book descriptions before downloading, with scrollable text on touch and button devices. Long descriptions show a bounded excerpt.

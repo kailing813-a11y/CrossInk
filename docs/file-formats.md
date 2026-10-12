@@ -599,6 +599,26 @@ book is renamed or moved outside CrossInk, the path hash changes, so the old
 clipping file may no longer be associated with the book until the file is moved
 back or the clipping store is migrated.
 
+## `/.crosspoint/clippings-deleted/<bookType>_<crc32(path)>.txt`
+
+Clipping deletions waiting to be sent to the sync server. Deleting a clipping in
+the reader's clipping list, or **Delete Clippings** for a whole book, appends one
+fixed-width ASCII line per clipping:
+
+```text
+<16 lowercase hex: server id> <8 lowercase hex: text key>\n
+```
+
+The id is `SHA256(decimal creation time + text)` truncated to 16 hex characters,
+the same identity the clippings API uses. The text key is a 32-bit FNV-1a hash of
+the clipping's letters and digits (ASCII lowercased; spacing and punctuation
+skipped) seeded with the spine index; sync uses it to delete server copies of the
+same quote that another device uploaded under a different id. A successful
+clipping sync sends a tombstone for each line and removes the file. A torn final
+line is ignored. The file is moved with the clipping file when a book is moved
+or renamed through CrossInk and removed when the book's clippings are deleted
+with the book.
+
 ## `stats_v5.bin`
 
 ### Version 5

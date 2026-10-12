@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <memory>
 
 // App-facing transport for the CrossPoint stats snapshot API.
@@ -9,6 +10,9 @@ class StatsUploadClient {
   StatsUploadClient();
   ~StatsUploadClient();
   Result put(const char* endpoint, const char* payload, bool book, bool daily = false);
+  // GET a JSON reply into `buffer` (NUL-terminated on success). A reply that
+  // does not fit returns InvalidResponse rather than a truncated body.
+  Result get(const char* endpoint, char* buffer, size_t capacity, size_t& length);
   // Read-only capability check against the stats summary endpoint. Records the
   // answer in the credential store; Unsupported means a KOSync-only server.
   // A non-JSON 200 (captive portal, proxy page) is only persisted when

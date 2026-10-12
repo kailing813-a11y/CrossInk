@@ -1,0 +1,68 @@
+name: Build firmware (branch)
+
+# Builds flashable firmware for a feature branch so it can be tried on a device
+# without a local PlatformIO setup. Download the artifact for your device from
+# the run's summary page.
+on:
+  push:
+    branches: ["feat/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [default, x4-classic, x4-pro, sticky]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/packages
+            ~/.platformio/platforms
+          key: ${{ runner.os }}-platformio-py3.14-core6.1.19-${{ matrix.environment }}-${{ hashFiles('platformio.ini', 'platformio.local.example.ini') }}
+
+      - name: Install PlatformIO Core
+        run: uv pip install --system -U https://github.com/pioarduino/platformio-core/archive/refs/tags/v6.1.19.zip
+
+      - name: Build ${{ matrix.environment }} firmware
+        run: |
+          set -euo pipefail
+          pio run -j1 -e ${{ matrix.environment }} | tee pio-${{ matrix.environment }}.log
+          ls -la .pio/build/${{ matrix.environment }}/*.bin
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v7
+        with:
+          name: firmware-${{ matrix.environment }}
+          path: .pio/build/${{ matrix.environment }}/firmware*.bin
+          if-no-files-found: error
+
+  native-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Clipping sync tests
+        run: |
+          cmake -S test -B build-tests -G 'Unix Makefiles'
+          cmake --build build-tests --target ClippingSyncPlanTest -j4
+          ./build-tests/clipping_sync_plan/ClippingSyncPlanTest
