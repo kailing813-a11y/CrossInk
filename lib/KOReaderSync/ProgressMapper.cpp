@@ -314,8 +314,12 @@ class ParagraphStreamer final : public Print {
   int htmlDepth = 0;
   int stepEnteredAtDepth[MAX_XPATH_DEPTH] = {};
 
-  // Tag name accumulation
-  enum TagParseState { TAG_IDLE, TAG_IN_NAME, TAG_ATTRS } tagState = TAG_IDLE;
+  // Tag name accumulation. TAG_DECL covers <!...> and <?...?> markup, which is
+  // never an element: <!DOCTYPE>, <?xml?>, and the start of comments.
+  enum TagParseState { TAG_IDLE, TAG_IN_NAME, TAG_ATTRS, TAG_DECL } tagState = TAG_IDLE;
+  int declLen = 0;     // bytes seen after "<!" (detects "<!--")
+  bool inComment = false;
+  int commentDashes = 0;  // consecutive '-' seen inside a comment
   bool tagIsClose = false;
   char tagName[12] = {};
   int tagNameLen = 0;
@@ -637,11 +641,32 @@ class ParagraphStreamer final : public Print {
         if (c == '/') {
           tagIsClose = true;
           tagState = TAG_IN_NAME;
-        } else if (c != '!' && c != '?') {
+        } else if (c == '!' || c == '?') {
+          // Previously the next byte started a tag name, so "<!-- x -->" opened a
+          // phantom "--" element that never closed. Inside <head> that left the
+          // whole body counted as non-visible (e.g. Kobo-converted EPUBs).
+          tagState = TAG_DECL;
+          declLen = (c == '!') ? 0 : -1;
+        } else {
           tagIsClose = false;
           tagName[0] = static_cast<char>(c);
           tagNameLen = 1;
           tagState = TAG_IN_NAME;
+        }
+        break;
+      case TAG_DECL:
+        if (declLen >= 0 && declLen < 2) {
+          if (c == '-') {
+            if (++declLen == 2) {
+              // "<!--": skip everything up to "-->", including any '<', '>' or '/'.
+              globalInTag = false;
+              tagState = TAG_IDLE;
+              inComment = true;
+              commentDashes = 0;
+            }
+          } else {
+            declLen = -1;  // <!DOCTYPE ...> or similar: ignored until '>'
+          }
         }
         break;
       case TAG_IN_NAME:
@@ -709,6 +734,16 @@ class ParagraphStreamer final : public Print {
       fwdCaptured = true;
     }
     bytesWritten++;
+
+    if (inComment) {
+      if (c == '-') {
+        commentDashes++;
+      } else {
+        if (c == '>' && commentDashes >= 2) inComment = false;
+        commentDashes = 0;
+      }
+      return 1;
+    }
 
     if (globalInEntity) {
       if (entityLen + 1 < MAX_ENTITY_SIZE) {
