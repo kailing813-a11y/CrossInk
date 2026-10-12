@@ -61,6 +61,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          submodules: recursive # other test targets in this CMake project use the SDK
       - name: Clipping sync tests
         run: |
           cmake -S test -B build-tests -G 'Unix Makefiles'
