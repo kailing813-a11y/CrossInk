@@ -21,11 +21,13 @@
 // small random sample of the index is scored per suggestion, so time and memory
 // stay constant regardless of library size.
 //
-// The caller must close its own handle on the Library index first: real SD
-// hardware allows one open reader per file.
+// Opened from Home or the Library menu. The caller must close its own handle on
+// the Library index first: real SD hardware allows one open reader per file.
+// From Home the existing index is used as-is (no rescan); books that have since
+// disappeared from the card are skipped.
 class SuggestBookActivity final : public Activity {
  public:
-  SuggestBookActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, uint8_t visibleFileTypes);
+  SuggestBookActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
   void onEnter() override;
   void onExit() override;
   void loop() override;
@@ -55,7 +57,7 @@ class SuggestBookActivity final : public Activity {
   enum class State : uint8_t { Ready, NoIndex, NoBooks };
 
   library::LibraryIndexFile index;
-  const uint8_t visibleTypes;
+  uint8_t visibleTypes = 0;
   Suggestion current;
   State state = State::Ready;
   uint16_t shown[SHOWN_HISTORY]{};

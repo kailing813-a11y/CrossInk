@@ -63,14 +63,17 @@ void formatSize(const uint32_t bytes, char* out, const size_t len) {
 }
 }  // namespace
 
-SuggestBookActivity::SuggestBookActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
-                                         const uint8_t visibleFileTypes)
-    : Activity("SuggestBook", renderer, mappedInput), visibleTypes(visibleFileTypes) {}
+SuggestBookActivity::SuggestBookActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
+    : Activity("SuggestBook", renderer, mappedInput) {}
 
 void SuggestBookActivity::onEnter() {
   Activity::onEnter();
   // Confirm opened the menu entry that launched us; its release is not an answer.
   ignoreConfirmRelease = mappedInput.isPressed(MappedInputManager::Button::Confirm);
+  // Same file types the Library shows.
+  visibleTypes = (SETTINGS.libraryShowEpub ? library::FileEpub : 0) | (SETTINGS.libraryShowXtc ? library::FileXtc : 0) |
+                 (SETTINGS.libraryShowTxt ? library::FileTxt : 0) |
+                 (SETTINGS.libraryShowMarkdown ? library::FileMarkdown : 0);
   computeCoverSize();
   {
     RenderLock lock;
@@ -425,7 +428,7 @@ void SuggestBookActivity::render(RenderLock&&) {
 
   if (state != State::Ready || !current.valid) {
     renderer.drawCenteredText(UI_10_FONT_ID, renderer.getScreenHeight() / 2,
-                              I18N.get(state == State::NoIndex ? StrId::STR_LIBRARY_SCAN_FAILED : StrId::STR_SUGGEST_NO_BOOKS));
+                              I18N.get(state == State::NoIndex ? StrId::STR_SUGGEST_NO_INDEX : StrId::STR_SUGGEST_NO_BOOKS));
     if (!touch) {
       const auto labels = mappedInput.mapLabels(mappedInput.withBackArrow(tr(STR_BACK)), "", "", "");
       GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);

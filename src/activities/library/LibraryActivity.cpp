@@ -711,7 +711,7 @@ void LibraryActivity::openSuggestion() {
   // Real SD hardware allows one open reader per file; the suggestion screen
   // opens the index itself.
   index.close();
-  openDialog(makeUniqueNoThrow<SuggestBookActivity>(renderer, mappedInput, visibleLibraryFileTypes()),
+  openDialog(makeUniqueNoThrow<SuggestBookActivity>(renderer, mappedInput),
              [this](const ActivityResult& result) {
                const auto* picked = std::get_if<FilePathResult>(&result.data);
                if (!result.isCancelled && picked && !picked->path.empty()) {

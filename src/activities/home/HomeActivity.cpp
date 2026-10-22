@@ -36,6 +36,7 @@
 #include "RecentBookProgress.h"
 #include "RecentBooksStore.h"
 #include "SavedItemsHomeActivity.h"
+#include "activities/library/SuggestBookActivity.h"
 #include "components/UITheme.h"
 #include "components/themes/dashboard/DashboardTheme.h"
 #include "components/themes/lyra/LyraCarouselTheme.h"
@@ -58,6 +59,7 @@ enum class HomeMenuAction {
   BrowseFiles,
   ContinueReading,
   Library,
+  SuggestBook,
   OpdsBrowser,
   ReadingStats,
   Bookmarks,
@@ -72,7 +74,7 @@ struct HomeMenuEntry {
 };
 
 struct HomeMenuEntries {
-  static constexpr int kCapacity = 8;
+  static constexpr int kCapacity = 9;
   std::array<HomeMenuEntry, kCapacity> entries{};
   int count = 0;
 
@@ -238,6 +240,7 @@ void appendHomeMenuItems(HomeMenuEntries& items, bool hasOpdsServers, bool hasRe
                          bool hasClippings) {
   items.push({tr(STR_BROWSE_FILES), Folder, HomeMenuAction::BrowseFiles});
   items.push({tr(STR_LIBRARY), Library, HomeMenuAction::Library});
+  items.push({tr(STR_SUGGEST_BOOK), Book, HomeMenuAction::SuggestBook});
 
   if (hasOpdsServers) {
     items.push({tr(STR_OPDS_BROWSER), Opds, HomeMenuAction::OpdsBrowser});
@@ -266,6 +269,7 @@ HomeMenuEntries buildMinimalMenuItems(bool hasOpdsServers, bool hasReadingStats,
   } else {
     items.push({tr(STR_LIBRARY), Library, HomeMenuAction::Library});
   }
+  items.push({tr(STR_SUGGEST_BOOK), Book, HomeMenuAction::SuggestBook});
 
   if (hasOpdsServers) {
     items.push({tr(STR_OPDS_BROWSER), Opds, HomeMenuAction::OpdsBrowser});
@@ -541,7 +545,7 @@ static_assert(HomeActivity::kMaxCachedBooks >= LyraCarouselMetrics::values.homeR
 int HomeActivity::getMenuItemCount() const {
   if (coverGridUi) return static_cast<int>(recentBooks.size()) + (hasOpdsServers ? 5 : 4);
   const auto& metrics = UITheme::getInstance().getMetrics();
-  int count = 4;  // File Browser, Library, File transfer, Settings
+  int count = 5;  // File Browser, Library, Suggest a Book, File transfer, Settings
   if (!metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
     count += getVisibleRecentBookCount();
   } else if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
@@ -1489,6 +1493,9 @@ void HomeActivity::loop() {
           case HomeMenuAction::Library:
             onLibraryOpen();
             break;
+          case HomeMenuAction::SuggestBook:
+            onSuggestBookOpen();
+            break;
           case HomeMenuAction::OpdsBrowser:
             onOpdsBrowserOpen();
             break;
@@ -1733,6 +1740,9 @@ void HomeActivity::loop() {
         break;
       case HomeMenuAction::Library:
         onLibraryOpen();
+        break;
+      case HomeMenuAction::SuggestBook:
+        onSuggestBookOpen();
         break;
       case HomeMenuAction::OpdsBrowser:
         onOpdsBrowserOpen();
@@ -2393,6 +2403,23 @@ void HomeActivity::onReadingStatsOpen() {
                              requestUpdate();
                            });
   }
+}
+
+void HomeActivity::onSuggestBookOpen() {
+  auto suggestion = makeUniqueNoThrow<SuggestBookActivity>(renderer, mappedInput);
+  if (!suggestion) {
+    LOG_ERR("HOME", "Cannot allocate Suggest a Book");
+    return;
+  }
+  startActivityForResult(std::move(suggestion),
+                         [this](const ActivityResult& result) {
+                           const auto* picked = std::get_if<FilePathResult>(&result.data);
+                           if (!result.isCancelled && picked && !picked->path.empty()) {
+                             onSelectBook(picked->path);
+                             return;
+                           }
+                           requestUpdate();
+                         });
 }
 
 void HomeActivity::onSavedItemsOpen() {
