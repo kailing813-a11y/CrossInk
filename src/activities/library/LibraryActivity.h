@@ -154,6 +154,7 @@ class LibraryActivity final : public Activity {
   void handleInput(const LibraryInputBuffer::Event& input);
   void refreshIndexIfNeeded(bool showScanning = false);
   bool rebuildIndex(bool showScanning);
+  bool scanCard(bool showScanning);
   void drawScanScreen(const char* message) const;
   bool scanTouchEnabled() const;
   static bool scanCancelRequested(void* context);
@@ -166,6 +167,8 @@ class LibraryActivity final : public Activity {
   void openBook(int row);
   void openSortPicker(int selectedIndex = -1);
   void openMenu();
+  void openOverflowMenu();
+  void openSuggestion();
   void refreshLibrary();
   void openSearch();
   void openSettings();

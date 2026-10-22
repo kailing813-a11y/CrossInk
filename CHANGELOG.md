@@ -2,6 +2,7 @@
 
 ### Added
 
+- Suggest a Book from the Library menu (Menu button, or ⋮ on touch devices): shows a random unfinished book with its cover, author, series, genre, format, size, and progress, and asks "Open Book?". Choose Another to see a different book; books you keep passing on come up less often, and authors and genres you open or pass on gradually shift future picks.
 - Sync clippings both ways with CrossPoint Sync: clippings made on other devices (including KOReader) download as highlights, clippings deleted elsewhere are removed, and deleting a clipping on the reader deletes it on the server at the next sync.
 - Assign Select Chapter to shortcuts, Quick Actions, or touch gestures to open the chapter list directly in EPUB and XTC books.
 - Track active reading seconds by local day, sync daily reading time to CrossPoint Sync, and show today's total and 7-day average on the This Device reading stats page.

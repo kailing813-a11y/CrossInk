@@ -26,6 +26,7 @@
 #include "activities/home/FileBrowserActionActivity.h"
 #include "activities/home/RecentBookProgress.h"
 #include "activities/library/LibrarySettingsActivity.h"
+#include "activities/library/SuggestBookActivity.h"
 #include "activities/reader/BookReadingStats.h"
 #include "activities/reader/EpubReaderActivity.h"
 #include "activities/util/ConfirmationActivity.h"
@@ -198,13 +199,8 @@ void LibraryActivity::refreshIndexIfNeeded(const bool showScanning) {
   applyFilter();
 }
 
-bool LibraryActivity::rebuildIndex(const bool showScanning) {
-  if (sort == Sort::RecentlyRead) {
-    library::invalidateLibraryIndex();
-    if (RECENT_BOOKS.pruneMissing()) RECENT_BOOKS.saveToFile();
-    refreshIndexIfNeeded();
-    return true;
-  }
+// Writes a fresh index to the card. Leaves `index` closed; callers reopen it.
+bool LibraryActivity::scanCard(const bool showScanning) {
   uiReady = false;
   index.close();
   if (showScanning) drawScanScreen(tr(STR_LIBRARY_SCANNING));
@@ -224,6 +220,17 @@ bool LibraryActivity::rebuildIndex(const bool showScanning) {
     ignoreBackRelease = mappedInput.isPressed(MappedInputManager::Button::Back);
   }
   if (scanFailed) LOG_ERR("LIB", "Library scan failed; retaining the previous index");
+  return !scanFailed;
+}
+
+bool LibraryActivity::rebuildIndex(const bool showScanning) {
+  if (sort == Sort::RecentlyRead) {
+    library::invalidateLibraryIndex();
+    if (RECENT_BOOKS.pruneMissing()) RECENT_BOOKS.saveToFile();
+    refreshIndexIfNeeded();
+    return true;
+  }
+  scanCard(showScanning);
   if (!index.open(library::libraryIndexPath())) {
     // A failed one-time upgrade leaves the previous index on the card. Keep
     // its books readable while the next visit retries the rebuild.
@@ -669,13 +676,51 @@ void LibraryActivity::openSortPicker(const int selectedIndex) {
 }
 
 void LibraryActivity::openMenu() {
-  static constexpr StrId choices[] = {StrId::STR_SEARCH, StrId::STR_SETTINGS_SHORT, StrId::STR_LIBRARY_RESCAN};
-  actionPopup.show(StrId::STR_MENU, choices, 3, 0, [this](const int selected) {
+  static constexpr StrId choices[] = {StrId::STR_SEARCH, StrId::STR_SUGGEST_BOOK, StrId::STR_SETTINGS_SHORT,
+                                      StrId::STR_LIBRARY_RESCAN};
+  actionPopup.show(StrId::STR_MENU, choices, 4, 0, [this](const int selected) {
     if (selected == 0) openSearch();
-    if (selected == 1) openSettings();
-    if (selected == 2) refreshLibrary();
+    if (selected == 1) openSuggestion();
+    if (selected == 2) openSettings();
+    if (selected == 3) refreshLibrary();
   });
   requestUpdate();
+}
+
+// Touch header overflow (the vertical ellipsis): touch layouts have no Menu key.
+void LibraryActivity::openOverflowMenu() {
+  static constexpr StrId choices[] = {StrId::STR_SUGGEST_BOOK, StrId::STR_SETTINGS_SHORT};
+  actionPopup.setDismissOnOutsideTouchDown(true);
+  actionPopup.show(StrId::STR_MENU, choices, 2, 0, [this](const int selected) {
+    if (selected == 0) openSuggestion();
+    if (selected == 1) openSettings();
+  });
+  requestUpdate();
+}
+
+void LibraryActivity::openSuggestion() {
+  // Suggestions draw from the whole index, which the Recently Opened view does
+  // not keep current. Scan first when the card has changed.
+  if (library::libraryIndexNeedsRefresh() || !Storage.exists(library::libraryIndexPath())) {
+    if (!scanCard(true) && scanCancelledThisVisit) {
+      refreshIndexIfNeeded();
+      requestUpdate();
+      return;
+    }
+  }
+  // Real SD hardware allows one open reader per file; the suggestion screen
+  // opens the index itself.
+  index.close();
+  openDialog(makeUniqueNoThrow<SuggestBookActivity>(renderer, mappedInput, visibleLibraryFileTypes()),
+             [this](const ActivityResult& result) {
+               const auto* picked = std::get_if<FilePathResult>(&result.data);
+               if (!result.isCancelled && picked && !picked->path.empty()) {
+                 app.clearTapFlash();
+                 onSelectBook(picked->path);
+                 return;
+               }
+               refreshIndexIfNeeded();
+             });
 }
 
 void LibraryActivity::openSearch() {
@@ -713,7 +758,7 @@ void LibraryActivity::activateControl(const int control) {
   app.clearTapFlash();
   if (control == 0) refreshLibrary();
   if (control == 1) openSearch();
-  if (control == 2) openSettings();
+  if (control == 2) openOverflowMenu();
   if (control == 3) openSortPicker();
   if (control == 4) {
     descending = !descending;
