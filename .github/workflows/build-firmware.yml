@@ -5,7 +5,7 @@ name: Build firmware (branch)
 # the run's summary page.
 on:
   push:
-    branches: ["feat/**"]
+    branches: ["feat/**", "develop-kai"]
   workflow_dispatch:
 
 permissions:
