@@ -26,6 +26,7 @@
 
 ### Fixed
 
+- Show book titles and filenames in any script in confirmation and option popups (such as "Delete? 三体.epub") when a UI Font is selected on ESP32-S3 readers, instead of missing-character boxes.
 - KOReader progress sync now lands on the right page in EPUBs whose chapters contain HTML comments (for example Kobo-converted books), instead of jumping dozens of pages ahead.
 
 - Reduce SD-font cache allocations while preserving kerning and dictionary ligatures, including failed kerning loads (adapted from serialx, CrossPoint #3831 and #3838).

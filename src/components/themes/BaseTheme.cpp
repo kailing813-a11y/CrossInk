@@ -1087,6 +1087,10 @@ void BaseTheme::drawOptionPopup(const GfxRenderer& renderer, const char* title, 
 
   const int optionLineHeight = renderer.getLineHeight(optionFontId);
   const int titleLineHeight = renderer.getLineHeight(UI_12_FONT_ID);
+  // Titles often carry a book title or filename ("Delete? 三体.epub"). The
+  // filename copy adds the selected UI Font's glyphs for characters the
+  // built-in font lacks; covered text renders exactly as before.
+  const int titleFontId = renderer.filenameFontId(UI_12_FONT_ID);
   const bool hasNote = noteLabel && noteBody;
   const int noteLineHeight = renderer.getLineHeight(UI_10_FONT_ID);
   const int noteHeight = hasNote ? noteLineHeight * 2 + metrics.optionPopupTitleGap : 0;
@@ -1097,7 +1101,7 @@ void BaseTheme::drawOptionPopup(const GfxRenderer& renderer, const char* title, 
   const int rowHeight = optionLineHeight + selectionVPadding * 2;
 #endif
 
-  int maxTextWidth = renderer.getTextWidth(UI_12_FONT_ID, title, EpdFontFamily::BOLD);
+  int maxTextWidth = renderer.getTextWidth(titleFontId, title, EpdFontFamily::BOLD);
   for (size_t i = 0; i < options.size(); ++i) {
     const char* opt = options[i];
     const auto style = primaryOptionIndex == static_cast<int>(i) ? EpdFontFamily::BOLD : optionStyle;
@@ -1139,7 +1143,7 @@ void BaseTheme::drawOptionPopup(const GfxRenderer& renderer, const char* title, 
       std::max(1, (maxDialogH - innerPadding * 2 - metrics.optionPopupTitleGap - noteHeight - rowHeight - footerSpace) /
                       titleLineHeight);
   const auto titleLines =
-      renderer.wrappedText(UI_12_FONT_ID, title, titleContentWidth, maxTitleLines, EpdFontFamily::BOLD);
+      renderer.wrappedText(titleFontId, title, titleContentWidth, maxTitleLines, EpdFontFamily::BOLD);
   const int titleHeight = static_cast<int>(titleLines.size()) * titleLineHeight;
   const int maxListHeight = std::max(
       rowHeight, maxDialogH - innerPadding * 2 - titleHeight - metrics.optionPopupTitleGap - noteHeight - footerSpace);
@@ -1179,8 +1183,8 @@ void BaseTheme::drawOptionPopup(const GfxRenderer& renderer, const char* title, 
   int y = dialogY + innerPadding;
 
   for (const auto& line : titleLines) {
-    const int lineWidth = renderer.getTextWidth(UI_12_FONT_ID, line.c_str(), EpdFontFamily::BOLD);
-    renderer.drawText(UI_12_FONT_ID, dialogX + (dialogW - lineWidth) / 2, y, line.c_str(), true, EpdFontFamily::BOLD);
+    const int lineWidth = renderer.getTextWidth(titleFontId, line.c_str(), EpdFontFamily::BOLD);
+    renderer.drawText(titleFontId, dialogX + (dialogW - lineWidth) / 2, y, line.c_str(), true, EpdFontFamily::BOLD);
     y += titleLineHeight;
   }
 
