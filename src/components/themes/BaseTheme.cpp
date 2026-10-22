@@ -937,6 +937,14 @@ void BaseTheme::drawReaderStatusBar(const GfxRenderer& renderer, const ReaderSta
         return nullptr;
     }
   };
+  // Book and chapter titles can be in any script. Their filename copy of the
+  // status bar font fills glyphs the built-in font lacks (S3 builds with a UI
+  // Font selected); numbers, clock and battery keep the plain font.
+  const auto itemFontId = [&](const ReaderStatusBarItem item) {
+    return item == ReaderStatusBarItem::TitleBook || item == ReaderStatusBarItem::TitleChapter
+               ? renderer.filenameFontId(fontId)
+               : fontId;
+  };
   const auto measureItem = [&](const ReaderStatusBarItem item, const int maxWidth) {
     if (item == ReaderStatusBarItem::Battery && batteryIcon) {
       int width = metrics.batteryWidth;
@@ -949,7 +957,7 @@ void BaseTheme::drawReaderStatusBar(const GfxRenderer& renderer, const ReaderSta
     }
     char scratch[48];
     const char* value = itemText(item, scratch, sizeof(scratch));
-    return value && value[0] ? std::min(maxWidth, renderer.getTextWidth(fontId, value)) : 0;
+    return value && value[0] ? std::min(maxWidth, renderer.getTextWidth(itemFontId(item), value)) : 0;
   };
   const auto drawItem = [&](const ReaderStatusBarItem item, const int x, const int allowedWidth,
                             const bool alignRight) {
@@ -972,14 +980,15 @@ void BaseTheme::drawReaderStatusBar(const GfxRenderer& renderer, const ReaderSta
     char scratch[48];
     const char* value = itemText(item, scratch, sizeof(scratch));
     if (!value || !value[0] || allowedWidth <= 0) return;
+    const int textFontId = itemFontId(item);
     std::string clipped;
-    int width = renderer.getTextWidth(fontId, value);
+    int width = renderer.getTextWidth(textFontId, value);
     if (width > allowedWidth) {
-      clipped = renderer.truncatedText(fontId, value, allowedWidth);
+      clipped = renderer.truncatedText(textFontId, value, allowedWidth);
       value = clipped.c_str();
-      width = renderer.getTextWidth(fontId, value);
+      width = renderer.getTextWidth(textFontId, value);
     }
-    renderer.drawText(fontId, x + (alignRight ? allowedWidth - width : 0), textY, value, foregroundBlack);
+    renderer.drawText(textFontId, x + (alignRight ? allowedWidth - width : 0), textY, value, foregroundBlack);
   };
 
   constexpr int itemGap = 8;

@@ -90,6 +90,7 @@ inline esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause() { return ESP_SLEEP_
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
 #include "RecentBooksStore.h"
+#include "FilenameFontSystem.h"
 #include "SdCardFontSystem.h"
 #include "SilentRestart.h"
 #include "activities/Activity.h"
@@ -1204,6 +1205,10 @@ void setupDisplayAndFonts(const bool seamless, const bool loadReaderResources, c
   renderer.insertFont(SMALL_FONT_ID, smallFontFamily);
   if (loadReaderResources) {
     sdFontSystem.begin(renderer);
+    // Waking or restarting straight into a book skips Home and Library, which
+    // otherwise load the UI Font fallback. Load it here so reader status bar
+    // titles and popups can use it from the first page (no-op on C3 builds).
+    filenameFontSystem.ensureLoaded(renderer);
   } else {
     LOG_DBG("MAIN", "Skipping EPUB scratch workspace and SD fonts for minimal network boot");
   }
