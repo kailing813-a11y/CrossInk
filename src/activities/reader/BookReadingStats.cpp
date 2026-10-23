@@ -189,7 +189,8 @@ BookReadingStats::ListInfo BookReadingStats::peekListInfo(const std::string& cac
     const int n = f.read(data, STATS_FILE_SIZE);
     f.close();
     const bool complete = n >= 0 && static_cast<size_t>(n) == fileSize;
-    // Every format keeps the session count at bytes 1-2; every format since V2
+    // Every format keeps the session count at bytes 1-2 and reading seconds at
+    // bytes 3-6; every format since V2
     // keeps the completed flag at byte 11 (V1 had none).
     const bool known = complete && ((n == STATS_FILE_SIZE_V1 && data[0] == STATS_FILE_VERSION_V1) ||
                                     (n == STATS_FILE_SIZE_V2 && data[0] == STATS_FILE_VERSION_V2) ||
@@ -200,6 +201,7 @@ BookReadingStats::ListInfo BookReadingStats::peekListInfo(const std::string& cac
     if (i == 1 && !(known && n == STATS_FILE_SIZE)) continue;
     if (!known) return info;
     info.sessionCount = readLe16(data, 1);
+    info.totalReadingSeconds = readLe32(data, 3);
     info.completed = n > STATS_FILE_SIZE_V1 && data[11] != 0;
     return info;
   }

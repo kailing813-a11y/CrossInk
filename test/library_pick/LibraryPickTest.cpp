@@ -245,3 +245,32 @@ TEST(LibraryPickTest, EngagementWeightStaysPositiveAndBounded) {
   EXPECT_EQ(library::engagementWeight(1, engaged(1)), 1);
   EXPECT_EQ(library::engagementWeight(UINT16_MAX, engaged(4, 2)), UINT16_MAX);
 }
+
+namespace {
+library::PickEngagement readFor(uint32_t seconds, uint16_t sessions, uint8_t rank) {
+  library::PickEngagement e;
+  e.sessions = sessions;
+  e.readingSeconds = seconds;
+  e.recentRank = rank;
+  return e;
+}
+}  // namespace
+
+TEST(LibraryPickTest, ReadingTimeCountsAsSessions) {
+  EXPECT_EQ(library::sessionsFromReadingTime(29 * 60), 0);
+  EXPECT_EQ(library::sessionsFromReadingTime(30 * 60), 2);
+  EXPECT_EQ(library::sessionsFromReadingTime(60 * 60), 3);
+  EXPECT_EQ(library::sessionsFromReadingTime(2 * 60 * 60), 4);
+}
+
+TEST(LibraryPickTest, OneLongSittingIsBoostedLikeReturningOften) {
+  // Opened once but read for two hours: same as four sessions.
+  EXPECT_EQ(library::engagementWeight(256, readFor(2 * 60 * 60, 1, 3)), 640);
+  // A short sample stays neutral.
+  EXPECT_EQ(library::engagementWeight(256, readFor(5 * 60, 1, 3)), 256);
+}
+
+TEST(LibraryPickTest, LongSittingOutsideRecentsFadesOnlyToHalf) {
+  EXPECT_EQ(library::engagementWeight(256, readFor(45 * 60, 1, library::PickEngagement::RECENT_NONE)), 128);
+  EXPECT_EQ(library::engagementWeight(256, readFor(5 * 60, 1, library::PickEngagement::RECENT_NONE)), 64);
+}

@@ -153,11 +153,12 @@ bool SuggestBookActivity::readCandidate(const uint16_t ordinal, Suggestion& out,
 bool SuggestBookActivity::isEligible(const Suggestion& candidate, library::PickEngagement& engagement) {
   engagement = {};
   if (!Storage.exists(candidate.path.c_str())) return false;
-  // One stats read answers both "finished?" and "how often opened?".
+  // One stats read answers "finished?", "how often opened?" and "how long read?".
   const auto info = BookActions::peekBookForList(candidate.path);
   // A finished book is a poor answer to "what should I read next?".
   if (info.completed) return false;
   engagement.sessions = info.sessionCount;
+  engagement.readingSeconds = info.totalReadingSeconds;
   // At most MAX_RECENT_BOOKS (18) string compares; the list is already loaded.
   const auto& recents = RECENT_BOOKS.getBooks();
   for (size_t i = 0; i < recents.size() && i < library::PickEngagement::RECENT_NONE; i++) {

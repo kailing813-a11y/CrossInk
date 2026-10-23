@@ -184,31 +184,45 @@ class PickTaste {
 };
 
 // How much the reader has engaged with a book, from data the device already
-// keeps: the per-book session count (reading stats) and the book's position in
-// the recent-books list.
+// keeps: the per-book session count and total reading time (reading stats) and
+// the book's position in the recent-books list.
 struct PickEngagement {
   // Times the book was opened; 0 when never opened or stats are not tracked.
   uint16_t sessions = 0;
+  // Total time spent reading the book; 0 when unknown.
+  uint32_t readingSeconds = 0;
   // 0 = most recently opened; RECENT_NONE when not in the recent-books list.
   uint8_t recentRank = RECENT_NONE;
 
   static constexpr uint8_t RECENT_NONE = UINT8_MAX;
 };
 
+// Time spent reading counts like returning to a book, so one long sitting is
+// worth as much as several short visits: 30 min ~ 2 sessions, 1 h ~ 3, 2 h ~ 4.
+inline uint16_t sessionsFromReadingTime(const uint32_t seconds) {
+  if (seconds >= 2u * 60u * 60u) return 4;
+  if (seconds >= 60u * 60u) return 3;
+  if (seconds >= 30u * 60u) return 2;
+  return 0;
+}
+
 // Scales a taste weight by engagement so sampling many openings still lets the
 // books you keep coming back to rise:
 //   - never opened: unchanged, so new books stay in steady rotation
 //   - in the recent list and returned to: x1.5 at two sessions, rising to x2.5
-//     at four or more; a single sampled opening stays unchanged (the most
+//     at four or more, where reading time also counts as sessions (see
+//     sessionsFromReadingTime); a single short opening stays unchanged (the most
 //     recent book is left unchanged too: it is already one tap away on Home,
 //     and suggesting it would just repeat the last session)
-//   - opened but fallen out of the recent list: faded, x1/4 if opened once,
-//     x1/2 if returned to; rarer but never impossible
+//   - opened but fallen out of the recent list: faded, x1/4 if only sampled
+//     briefly, x1/2 if returned to or read for a while; rarer but never
+//     impossible
 // Always returns >= 1.
 inline uint16_t engagementWeight(const uint16_t tasteWeight, const PickEngagement& e) {
   const bool recent = e.recentRank != PickEngagement::RECENT_NONE;
   // A book in the recent list has been opened at least once, even with stats off.
-  const uint16_t sessions = recent ? std::max<uint16_t>(e.sessions, 1) : e.sessions;
+  uint16_t sessions = std::max(e.sessions, sessionsFromReadingTime(e.readingSeconds));
+  if (recent) sessions = std::max<uint16_t>(sessions, 1);
   uint32_t w = tasteWeight;
   if (sessions == 0 || e.recentRank == 0) {
     // unchanged
