@@ -150,9 +150,23 @@ bool SuggestBookActivity::readCandidate(const uint16_t ordinal, Suggestion& out,
   return true;
 }
 
-bool SuggestBookActivity::isEligible(const Suggestion& candidate) {
+bool SuggestBookActivity::isEligible(const Suggestion& candidate, library::PickEngagement& engagement) {
+  engagement = {};
+  if (!Storage.exists(candidate.path.c_str())) return false;
+  // One stats read answers both "finished?" and "how often opened?".
+  const auto info = BookActions::peekBookForList(candidate.path);
   // A finished book is a poor answer to "what should I read next?".
-  return Storage.exists(candidate.path.c_str()) && !BookActions::isBookCompletedForList(candidate.path);
+  if (info.completed) return false;
+  engagement.sessions = info.sessionCount;
+  // At most MAX_RECENT_BOOKS (18) string compares; the list is already loaded.
+  const auto& recents = RECENT_BOOKS.getBooks();
+  for (size_t i = 0; i < recents.size() && i < library::PickEngagement::RECENT_NONE; i++) {
+    if (recents[i].path == candidate.path) {
+      engagement.recentRank = static_cast<uint8_t>(i);
+      break;
+    }
+  }
+  return true;
 }
 
 void SuggestBookActivity::suggestNext() {
@@ -171,6 +185,7 @@ void SuggestBookActivity::suggestNext() {
   Suggestion scratch;
   scratch.path.reserve(256);
   const library::PickTaste& taste = BOOK_PICK.taste();
+  library::PickEngagement engagement;
   // Several rounds so a library that is mostly finished or filtered still finds
   // something; each round is a fresh random sample. The last rounds allow books
   // shown recently (even the current one) so the only unread book is not lost.
@@ -182,9 +197,9 @@ void SuggestBookActivity::suggestNext() {
     for (size_t i = 0; i < drawn; i++) {
       if (strict && wasShown(sample[i])) continue;
       if (strict && current.valid && sample[i] == current.ordinal) continue;
-      if (!readCandidate(sample[i], scratch, false) || !isEligible(scratch)) continue;
+      if (!readCandidate(sample[i], scratch, false) || !isEligible(scratch, engagement)) continue;
       eligible[eligibleCount] = sample[i];
-      weights[eligibleCount] = taste.weight(scratch.taste);
+      weights[eligibleCount] = library::engagementWeight(taste.weight(scratch.taste), engagement);
       eligibleCount++;
     }
   }

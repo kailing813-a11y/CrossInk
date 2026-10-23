@@ -183,6 +183,43 @@ class PickTaste {
   uint32_t tick = 0;
 };
 
+// How much the reader has engaged with a book, from data the device already
+// keeps: the per-book session count (reading stats) and the book's position in
+// the recent-books list.
+struct PickEngagement {
+  // Times the book was opened; 0 when never opened or stats are not tracked.
+  uint16_t sessions = 0;
+  // 0 = most recently opened; RECENT_NONE when not in the recent-books list.
+  uint8_t recentRank = RECENT_NONE;
+
+  static constexpr uint8_t RECENT_NONE = UINT8_MAX;
+};
+
+// Scales a taste weight by engagement so sampling many openings still lets the
+// books you keep coming back to rise:
+//   - never opened: unchanged, so new books stay in steady rotation
+//   - in the recent list and returned to: x1.5 at two sessions, rising to x2.5
+//     at four or more; a single sampled opening stays unchanged (the most
+//     recent book is left unchanged too: it is already one tap away on Home,
+//     and suggesting it would just repeat the last session)
+//   - opened but fallen out of the recent list: faded, x1/4 if opened once,
+//     x1/2 if returned to; rarer but never impossible
+// Always returns >= 1.
+inline uint16_t engagementWeight(const uint16_t tasteWeight, const PickEngagement& e) {
+  const bool recent = e.recentRank != PickEngagement::RECENT_NONE;
+  // A book in the recent list has been opened at least once, even with stats off.
+  const uint16_t sessions = recent ? std::max<uint16_t>(e.sessions, 1) : e.sessions;
+  uint32_t w = tasteWeight;
+  if (sessions == 0 || e.recentRank == 0) {
+    // unchanged
+  } else if (recent) {
+    w = w * (1 + std::min<uint16_t>(sessions, 4)) / 2;
+  } else {
+    w = sessions == 1 ? w / 4 : w / 2;
+  }
+  return static_cast<uint16_t>(std::clamp<uint32_t>(w, 1, UINT16_MAX));
+}
+
 // Draw an index in [0, count) with probability proportional to weights[i].
 // `randomValue` is any uniform 32-bit random number. Returns `count` when there
 // is nothing to draw from.

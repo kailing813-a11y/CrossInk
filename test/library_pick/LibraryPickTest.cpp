@@ -206,3 +206,42 @@ TEST(LibraryPickTest, DrawDistinctOrdinalsOnTinyLibrariesTerminates) {
   std::set<uint16_t> seen(out, out + three);
   EXPECT_EQ(seen.size(), three);
 }
+
+namespace {
+library::PickEngagement engaged(uint16_t sessions, uint8_t rank = library::PickEngagement::RECENT_NONE) {
+  library::PickEngagement e;
+  e.sessions = sessions;
+  e.recentRank = rank;
+  return e;
+}
+}  // namespace
+
+TEST(LibraryPickTest, NeverOpenedBooksKeepTheirWeight) {
+  EXPECT_EQ(library::engagementWeight(256, engaged(0)), 256);
+}
+
+TEST(LibraryPickTest, RecentBooksRiseOnlyOnceReturnedTo) {
+  EXPECT_EQ(library::engagementWeight(256, engaged(1, 3)), 256);
+  EXPECT_EQ(library::engagementWeight(256, engaged(2, 3)), 384);
+  EXPECT_EQ(library::engagementWeight(256, engaged(3, 3)), 512);
+  EXPECT_EQ(library::engagementWeight(256, engaged(4, 3)), 640);
+  EXPECT_EQ(library::engagementWeight(256, engaged(40, 3)), 640);
+}
+
+TEST(LibraryPickTest, RecentBookWithoutStatsIsNeutral) {
+  EXPECT_EQ(library::engagementWeight(256, engaged(0, 5)), 256);
+}
+
+TEST(LibraryPickTest, MostRecentBookIsNotBoosted) {
+  EXPECT_EQ(library::engagementWeight(256, engaged(9, 0)), 256);
+}
+
+TEST(LibraryPickTest, OpenedBooksOutsideRecentsFade) {
+  EXPECT_EQ(library::engagementWeight(256, engaged(1)), 64);
+  EXPECT_EQ(library::engagementWeight(256, engaged(3)), 128);
+}
+
+TEST(LibraryPickTest, EngagementWeightStaysPositiveAndBounded) {
+  EXPECT_EQ(library::engagementWeight(1, engaged(1)), 1);
+  EXPECT_EQ(library::engagementWeight(UINT16_MAX, engaged(4, 2)), UINT16_MAX);
+}

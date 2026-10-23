@@ -172,3 +172,21 @@ TEST_F(BookReadingStatsAtomicTest, UploadAcceptsAnExplicitlySavedEmptySnapshot) 
   EXPECT_TRUE(BookReadingStats::loadForUpload(CACHE_PATH, snapshot));
   EXPECT_EQ(snapshot.totalReadingSeconds, 0U);
 }
+
+TEST_F(BookReadingStatsAtomicTest, PeekListInfoReadsSessionsAndCompletion) {
+  BookReadingStats stats;
+  stats.sessionCount = 7;
+  stats.isCompleted = true;
+  ASSERT_TRUE(stats.save(CACHE_PATH));
+
+  const auto info = BookReadingStats::peekListInfo(CACHE_PATH);
+  EXPECT_EQ(info.sessionCount, 7U);
+  EXPECT_TRUE(info.completed);
+  EXPECT_TRUE(BookReadingStats::peekCompleted(CACHE_PATH));
+}
+
+TEST_F(BookReadingStatsAtomicTest, PeekListInfoWithoutStatsIsEmpty) {
+  const auto info = BookReadingStats::peekListInfo(CACHE_PATH);
+  EXPECT_EQ(info.sessionCount, 0U);
+  EXPECT_FALSE(info.completed);
+}

@@ -31,6 +31,14 @@ struct BookReadingStats {
   // logging failed opens or renaming/migrating anything.
   static bool peekCompleted(const std::string& cachePath);
 
+  // Same read as peekCompleted(), also returning the session count, so list
+  // views that need both pay for one small file read.
+  struct ListInfo {
+    bool completed = false;
+    uint16_t sessionCount = 0;
+  };
+  static ListInfo peekListInfo(const std::string& cachePath);
+
   // Checked export: false for missing, malformed, or unsupported snapshots.
   static bool loadForUpload(const std::string& cachePath, BookReadingStats& stats);
 
