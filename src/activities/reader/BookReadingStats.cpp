@@ -170,7 +170,10 @@ ReadingStatsDate readDate(const uint8_t* data, const int offset) {
 
 }  // namespace
 
-bool BookReadingStats::peekCompleted(const std::string& cachePath) {
+bool BookReadingStats::peekCompleted(const std::string& cachePath) { return peekListInfo(cachePath).completed; }
+
+BookReadingStats::ListInfo BookReadingStats::peekListInfo(const std::string& cachePath) {
+  ListInfo info;
   // Same order as openStatsFileForRead(), including an interrupted save's
   // .tmp/.bak files, but read in place instead of renamed.
   const std::string current = cachePath + "/" + statsFileNameForVersion(STATS_FILE_VERSION);
@@ -180,22 +183,27 @@ bool BookReadingStats::peekCompleted(const std::string& cachePath) {
   for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); ++i) {
     if (!Storage.exists(candidates[i].c_str())) continue;
     FsFile f;
-    if (!Storage.openFileForRead("STATS", candidates[i], f)) return false;
+    if (!Storage.openFileForRead("STATS", candidates[i], f)) return info;
     uint8_t data[STATS_FILE_SIZE] = {};
     const size_t fileSize = f.fileSize();
     const int n = f.read(data, STATS_FILE_SIZE);
     f.close();
     const bool complete = n >= 0 && static_cast<size_t>(n) == fileSize;
-    // Every format since V2 keeps the completed flag at byte 11; V1 had none.
-    const bool known = complete && ((n == STATS_FILE_SIZE_V2 && data[0] == STATS_FILE_VERSION_V2) ||
+    // Every format keeps the session count at bytes 1-2; every format since V2
+    // keeps the completed flag at byte 11 (V1 had none).
+    const bool known = complete && ((n == STATS_FILE_SIZE_V1 && data[0] == STATS_FILE_VERSION_V1) ||
+                                    (n == STATS_FILE_SIZE_V2 && data[0] == STATS_FILE_VERSION_V2) ||
                                     (n == STATS_FILE_SIZE_V3 && data[0] == STATS_FILE_VERSION_V3) ||
                                     (n == STATS_FILE_SIZE_V4 && data[0] == STATS_FILE_VERSION_V4) ||
                                     (n == STATS_FILE_SIZE && data[0] == STATS_FILE_VERSION));
     // A partial temp file falls through to the older backup, as in load().
     if (i == 1 && !(known && n == STATS_FILE_SIZE)) continue;
-    return known && data[11] != 0;
+    if (!known) return info;
+    info.sessionCount = readLe16(data, 1);
+    info.completed = n > STATS_FILE_SIZE_V1 && data[11] != 0;
+    return info;
   }
-  return false;
+  return info;
 }
 
 BookReadingStats BookReadingStats::load(const std::string& cachePath) {

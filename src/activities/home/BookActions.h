@@ -6,6 +6,7 @@
 
 #include "FileBrowserActionActivity.h"
 #include "PendingOverlayResume.h"
+#include "activities/reader/BookReadingStats.h"
 
 class GfxRenderer;
 class MappedInputManager;
@@ -34,6 +35,8 @@ bool isBookCompleted(const std::string& fullPath);
 // Read-only, log-quiet variant for list rows: never migrates cache folders or
 // stats files, and skips books that have no cache folder.
 bool isBookCompletedForList(const std::string& fullPath);
+// Same read as isBookCompletedForList(), also returning the session count.
+BookReadingStats::ListInfo peekBookForList(const std::string& fullPath);
 bool isBookStatsTrackingEnabled(const std::string& fullPath);
 bool toggleBookStatsTracking(const std::string& fullPath, bool& enabled);
 bool toggleBookCompleted(const std::string& fullPath, const std::string& displayName, bool& completed);

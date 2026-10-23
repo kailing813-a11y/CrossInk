@@ -249,7 +249,9 @@ bool isBookCompleted(const std::string& fullPath) {
   return !cachePath.empty() && BookReadingStats::load(cachePath).isCompleted;
 }
 
-bool isBookCompletedForList(const std::string& fullPath) {
+bool isBookCompletedForList(const std::string& fullPath) { return peekBookForList(fullPath).completed; }
+
+BookReadingStats::ListInfo peekBookForList(const std::string& fullPath) {
   std::string cachePath;
   if (FsHelpers::hasEpubExtension(fullPath)) {
     // Epub's constructor may rename a legacy cache folder; list rendering
@@ -257,15 +259,15 @@ bool isBookCompletedForList(const std::string& fullPath) {
     cachePath = Epub::cachePathForFilePath(fullPath, "/.crosspoint");
     if (!Storage.exists(cachePath.c_str())) {
       cachePath = "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(fullPath));
-      if (!Storage.exists(cachePath.c_str())) return false;
+      if (!Storage.exists(cachePath.c_str())) return {};
     }
   } else if (FsHelpers::hasXtcExtension(fullPath)) {
     cachePath = Xtc(fullPath, "/.crosspoint").getCachePath();
-    if (!Storage.exists(cachePath.c_str())) return false;
+    if (!Storage.exists(cachePath.c_str())) return {};
   } else {
-    return false;
+    return {};
   }
-  return BookReadingStats::peekCompleted(cachePath);
+  return BookReadingStats::peekListInfo(cachePath);
 }
 
 bool isBookStatsTrackingEnabled(const std::string& fullPath) {

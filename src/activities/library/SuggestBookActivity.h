@@ -17,7 +17,9 @@
 //   Back                  -> closes without learning anything
 //
 // The draw is weighted by BookPickStore: books you keep skipping come up less
-// often, and authors/genres you open or skip shift the odds a little. Only a
+// often, and authors/genres you open or skip shift the odds a little. Books you
+// keep returning to (recent and opened several times) come up more often, and
+// books opened once and then left fade (see library::engagementWeight). Only a
 // small random sample of the index is scored per suggestion, so time and memory
 // stay constant regardless of library size.
 //
@@ -75,7 +77,7 @@ class SuggestBookActivity final : public Activity {
   bool wasShown(uint16_t ordinal) const;
   void rememberShown(uint16_t ordinal);
   bool readCandidate(uint16_t ordinal, Suggestion& out, bool full);
-  bool isEligible(const Suggestion& candidate);
+  bool isEligible(const Suggestion& candidate, library::PickEngagement& engagement);
   void suggestNext();
   void prepareThumbnail();
   void openCurrent();
